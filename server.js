@@ -21,11 +21,14 @@ console.log("🔎 MONGO_URI loaded:", !!process.env.MONGO_URI);
 console.log("🔎 STRIPE KEY loaded:", !!process.env.STRIPE_SECRET_KEY);
 
 /* =======================
-   MONGODB CONNECTION
+/* =======================
+    MONGODB CONNECTION
 ======================= */
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ MongoDB Connected Successfully'))
-    .catch(err => console.error('❌ MongoDB Connection Error:', err.message));
+mongoose.connect(process.env.MONGO_URI, {
+    dbName: 'Acrylix' 
+})
+.then(() => console.log('✅ MongoDB Connected Successfully to Acrylix'))
+.catch(err => console.error('❌ MongoDB Connection Error:', err.message));
 
 /* =======================
    DB STATUS ROUTE (DEBUG)
