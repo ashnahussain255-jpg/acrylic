@@ -247,16 +247,16 @@
         <button onclick="closeProduct()" class="text-gold text-[10px] tracking-widest mb-10 uppercase">← Back to Gallery</button>
         <div id="product-content"></div>
     </div>
-
-    <div id="auth-modal" class="auth-overlay">
-        <div class="glass-card p-12 w-full max-w-md text-center">
-            <h3 class="text-2xl luxury-heading mb-8">CLIENT ACCESS</h3>
-            <input type="email" placeholder="EMAIL" class="contact-input mb-6">
-            <input type="password" placeholder="PASSWORD" class="contact-input mb-10">
-            <button onclick="loginUser()" class="gold-btn w-full py-4 text-[10px] tracking-widest mb-4">LOGIN</button>
-            <button onclick="toggleAuth()" class="text-[8px] tracking-widest opacity-50 uppercase">Cancel</button>
-        </div>
+<div id="auth-modal" class="auth-overlay">
+    <div class="glass-card p-12 w-full max-w-md text-center">
+        <h3 class="text-2xl luxury-heading mb-8">CLIENT ACCESS</h3>
+        <input type="email" id="auth-email-field" placeholder="EMAIL" class="contact-input mb-6">
+        <input type="password" id="auth-pass-field" placeholder="PASSWORD" class="contact-input mb-10">
+        
+        <button onclick="loginUser()" class="gold-btn w-full py-4 text-[10px] tracking-widest mb-4">LOGIN / REGISTER</button>
+        <button onclick="toggleAuth()" class="text-[8px] tracking-widest opacity-50 uppercase">Cancel</button>
     </div>
+</div>
 
     <nav id="main-nav" class="fixed w-full flex justify-between p-8 z-[100] items-center mix-blend-difference">
         <div class="text-xl font-bold tracking-[0.4em] luxury-heading cursor-pointer" onclick="location.reload()">ACRYLIX</div>
@@ -301,6 +301,8 @@
         </div>
     </div>
 
+
+<button id="main-checkout-btn" onclick="handleCheckout()" class="gold-btn w-full py-6 text-[10px] font-bold uppercase tracking-[0.4em] mb-4">Secure Checkout (UK)</button>
     <section class="flex flex-col justify-center items-start px-10 md:px-32 relative h-screen">
         <span class="text-[#D4AF37] text-xs font-bold tracking-[0.5em] uppercase mb-6">Established 2024</span>
         <h1 class="text-7xl md:text-[11rem] font-bold leading-[0.85] luxury-heading">LUXE<br>VOID.</h1>
@@ -430,289 +432,278 @@
     </footer>
 
     <script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } } </script>
+<script type="module">
+    import * as THREE from 'three';
+    gsap.registerPlugin(ScrollTrigger);
 
-    <script type="module">
-        import * as THREE from 'three';
-        gsap.registerPlugin(ScrollTrigger);
+    // --- State & Variables ---
+    let cart = [];
+    let isLoggedIn = false;
+    const cartPanel = document.getElementById('cart-panel');
+    const prodPanel = document.getElementById('product-detail');
+    const authModal = document.getElementById('auth-modal');
+    const payOverlay = document.getElementById('payment-overlay');
 
-        let cart = [];
-        let isLoggedIn = false; // Logic track karne ke liye
-// ... baqi code ke niche ...
-// --- SECURE PAYMENT INTEGRATION ---
-window.handleCheckout = async () => {
-    // 1. Check if cart is empty
-    if (cart.length === 0) {
-        alert("YOUR SELECTION IS EMPTY");
-        return;
-    }
+    // --- Auth Helpers ---
+    window.saveToken = (token) => localStorage.setItem("acrylix_token", token);
+    window.getToken = () => localStorage.getItem("acrylix_token");
 
-    // 2. Check Authentication
-    if (!isLoggedIn) {
-        alert("CLIENT ACCESS REQUIRED FOR CHECKOUT");
-        toggleCart();
-        toggleAuth();
-        return;
-    }
-
-    // 3. UI Feedback - Change Button State
-    const checkoutBtn = event.target;
-    const originalText = checkoutBtn.innerText;
-    checkoutBtn.innerText = "INITIALIZING SECURE ENCRYPTION...";
-    checkoutBtn.disabled = true;
-
-    try {
-        // 4. Call your Render Backend to create a Stripe Session
-        const response = await fetch("https://acrylic.onrender.com/api/create-checkout-session", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                items: cart, // Sending items to backend
-                email: currentUserEmail // Tracking the customer
-            })
-        });
-
-        const session = await response.json();
-
-        if (session.url) {
-            // 5. Redirect to Professional Stripe Hosted Page
-            window.location.href = session.url;
-        } else {
-            throw new Error("Session creation failed");
-        }
-
-    } catch (error) {
-        console.error("Payment Error:", error);
-        alert("CONNECTION ERROR: SECURE GATEWAY UNAVAILABLE");
-        
-        // Reset Button
-        checkoutBtn.innerText = originalText;
-        checkoutBtn.disabled = false;
-    }
-};
-// --- Logic Functions ---
-window.handleCheckout = async () => {
-    if (cart.length === 0) return alert("Bag is empty");
-    
-    // Jab aap Render par deploy kar dein, toh ye URL badal dena
-    const API_URL = "https://acrylic.onrender.com/api/checkout";
-
-    const orderPayload = {
-        items: cart,
-        total: document.getElementById('cart-total').innerText,
-        customer: { email: "client@example.com" } 
+    // --- UI Toggles ---
+    window.toggleCart = () => cartPanel.classList.toggle('active');
+    window.toggleAuth = () => {
+        const isVisible = authModal.style.display === 'grid';
+        authModal.style.display = isVisible ? 'none' : 'grid';
+        gsap.to(authModal, { opacity: isVisible ? 0 : 1, duration: 0.5 });
     };
 
+    // --- The Master Payment Process ---
+    window.handleCheckout = async () => {
+        // 1. Validation
+        if (cart.length === 0) return alert("YOUR SELECTION IS EMPTY");
+
+        // 2. Authentication Check
+        const token = getToken();
+        if (!token) {
+            alert("CLIENT ACCESS REQUIRED FOR CHECKOUT");
+            toggleCart();
+            toggleAuth();
+            return;
+        }
+
+        // 3. UI Feedback
+        const btn = document.querySelector('button[onclick="handleCheckout()"]');
+        const originalText = btn.innerText;
+        btn.innerText = "INITIALIZING SECURE STRIPE GATEWAY...";
+        btn.disabled = true;
+
+        try {
+            // 4. Contact Render Backend
+            const response = await fetch(`https://acrylic.onrender.com/api/create-checkout-session`, {
+                method: 'POST',
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ items: cart })
+            });
+
+            const session = await response.json();
+            
+            // 5. Redirection
+            if (session.url) {
+                window.location.href = session.url;
+            } else {
+                throw new Error("Session creation failed");
+            }
+
+        } catch (error) {
+            console.error("Payment Error:", error);
+            alert("CONNECTION ERROR: SECURE GATEWAY UNAVAILABLE");
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    };
+
+    // --- Login Process ---
+   // --- Login & Auto-Register Process ---
+window.loginUser = async () => {
+    const email = document.getElementById('auth-email-field').value;
+    const password = document.getElementById('auth-pass-field').value;
+
+    if (!email || !password) {
+        alert("EMAIL & PASSWORD REQUIRED");
+        return;
+    }
+
     try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderPayload)
+        const res = await fetch("https://acrylic.onrender.com/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
         });
 
-        if (response.ok) {
-            alert("Order Placed Successfully!");
-            cart = [];
-            updateCartUI();
-            toggleCart();
-        } else {
-            alert("Server error, please try again.");
+        const data = await res.json();
+
+        if (!data.success) {
+            alert("AUTH FAILED: Try again");
+            return;
         }
-    } catch (error) {
-        alert("Connection Error. Is the backend running?");
+
+        // ✅ SAVE TOKEN
+        localStorage.setItem("authToken", data.token);
+        localStorage.setItem("userEmail", data.email);
+
+        isLoggedIn = true;
+
+        // Close modal
+        gsap.to("#auth-modal", {
+            opacity: 0,
+            duration: 0.4,
+            onComplete: () => {
+                document.getElementById("auth-modal").style.display = "none";
+                toggleCart();
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        alert("SERVER ERROR");
     }
 };
 
-// ... loginUser aur baqi functions ke upar ...
-        const cartPanel = document.getElementById('cart-panel');
-        const prodPanel = document.getElementById('product-detail');
-        const authModal = document.getElementById('auth-modal');
-        const payOverlay = document.getElementById('payment-overlay');
 
-        window.toggleCart = () => cartPanel.classList.toggle('active');
-        
-        window.toggleAuth = () => {
-            const isVisible = authModal.style.display === 'grid';
-            authModal.style.display = isVisible ? 'none' : 'grid';
-            gsap.to(authModal, { opacity: isVisible ? 0 : 1, duration: 0.5 });
-        };
-
-        // --- Logic Functions ---
-        window.handleCheckout = () => {
-            if (cart.length === 0) return alert("Bag is empty");
-            
-            if (!isLoggedIn) {
-                toggleCart(); // Cart close
-                toggleAuth(); // Login open
-            } else {
-                openPayment();
+    // --- Cart & Product Functions ---
+    window.addToCart = (name, price, event) => {
+        cart.push({name, price});
+        updateCartUI();
+        const bubble = document.createElement('div');
+        bubble.className = 'cart-flyer';
+        document.body.appendChild(bubble);
+        const cartBtn = document.getElementById('cart-nav-btn');
+        const rect = cartBtn.getBoundingClientRect();
+        gsap.set(bubble, { left: event.clientX, top: event.clientY });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        gsap.to(bubble, {
+            left: (rect.left + rect.width / 2), 
+            top: (rect.top + rect.height / 2), 
+            scale: 0.5, opacity: 0, duration: 1.2, ease: "power2.inOut",
+            onComplete: () => {
+                bubble.remove();
+                gsap.fromTo("#cart-badge", { scale: 1.5 }, { scale: 1, duration: 0.4 });
+                setTimeout(() => { if(!cartPanel.classList.contains('active')) toggleCart(); }, 500);
             }
-        };
+        });
+    };
 
-        window.loginUser = () => {
-            isLoggedIn = true;
-            // Close login modal
-            gsap.to(authModal, { opacity: 0, duration: 0.4, onComplete: () => {
-                authModal.style.display = 'none';
-                // Open cart again
-                toggleCart();
-            }});
-        };
-
-        function openPayment() {
-            payOverlay.style.display = 'grid';
-            gsap.to(payOverlay, { opacity: 1, duration: 0.5 });
+    function updateCartUI() {
+        const container = document.getElementById('cart-items');
+        const badge = document.getElementById('cart-badge');
+        const total = document.getElementById('cart-total');
+        badge.innerText = cart.length;
+        if(cart.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-[10px] uppercase py-10">The bag is currently empty.</p>';
+            total.innerText = '£0.00';
+            return;
         }
-
-        window.closePayment = () => {
-            gsap.to(payOverlay, { opacity: 0, duration: 0.4, onComplete: () => payOverlay.style.display = 'none' });
-        };
-
-        // --- Original Functions ---
-        window.viewProduct = (name, price, desc, img) => {
-            document.getElementById('product-content').innerHTML = `
-                <img src="${img}" class="w-full h-80 object-cover mb-8 grayscale hover:grayscale-0 transition-all">
-                <h2 class="text-3xl luxury-heading mb-4">${name}</h2>
-                <p class="text-gold text-xl mb-6">£${price}</p>
-                <div class="space-y-4 text-xs tracking-widest text-gray-400 mb-10 leading-loose">
-                    <p>${desc}</p>
-                    <p class="text-white">MATERIAL: Optical Grade Acrylic</p>
-                    <p class="text-white">LEAD TIME: 8-12 Weeks (UK Delivery)</p>
-                </div>
-                <button onclick="addToCart('${name}', ${price}, event)" class="gold-btn w-full py-6 text-[10px] font-bold tracking-[0.3em] uppercase">Add to Cart</button>
-            `;
-            prodPanel.classList.add('active');
-        };
-        window.closeProduct = () => prodPanel.classList.remove('active');
-
-        window.addToCart = (name, price, event) => {
-            cart.push({name, price});
-            updateCartUI();
-            const bubble = document.createElement('div');
-            bubble.className = 'cart-flyer';
-            document.body.appendChild(bubble);
-            const startX = event.clientX;
-            const startY = event.clientY;
-            const cartBtn = document.getElementById('cart-nav-btn');
-            const rect = cartBtn.getBoundingClientRect();
-            const endX = rect.left + rect.width / 2;
-            const endY = rect.top + rect.height / 2;
-            gsap.set(bubble, { left: startX, top: startY });
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            gsap.to(bubble, {
-                left: endX, top: endY, scale: 0.5, opacity: 0, duration: 1.2, ease: "power2.inOut",
-                onComplete: () => {
-                    bubble.remove();
-                    gsap.fromTo("#cart-badge", { scale: 1.5 }, { scale: 1, duration: 0.4 });
-                    setTimeout(() => { if(!cartPanel.classList.contains('active')) toggleCart(); }, 500);
-                }
-            });
-        };
-
-        function updateCartUI() {
-            const container = document.getElementById('cart-items');
-            const badge = document.getElementById('cart-badge');
-            const total = document.getElementById('cart-total');
-            badge.innerText = cart.length;
-            if(cart.length === 0) {
-                container.innerHTML = '<p class="text-gray-500 text-[10px] uppercase py-10">The bag is currently empty.</p>';
-                total.innerText = '£0.00';
-                return;
-            }
-            let sum = 0;
-            container.innerHTML = cart.map((item, index) => {
-                sum += item.price;
-                return `
-                    <div class="flex justify-between items-center border-b border-white/5 pb-4">
-                        <div>
-                            <p class="text-[10px] tracking-widest uppercase">${item.name}</p>
-                            <p class="text-gold text-[10px]">£${item.price}</p>
-                        </div>
-                        <button onclick="removeFromCart(${index})" class="text-[8px] opacity-40 hover:opacity-100 transition-opacity">REMOVE</button>
+        let sum = 0;
+        container.innerHTML = cart.map((item, index) => {
+            sum += item.price;
+            return `
+                <div class="flex justify-between items-center border-b border-white/5 pb-4">
+                    <div>
+                        <p class="text-[10px] tracking-widest uppercase">${item.name}</p>
+                        <p class="text-gold text-[10px]">£${item.price}</p>
                     </div>
-                `;
-            }).join('');
-            total.innerText = `£${sum.toLocaleString()}`;
-        }
+                    <button onclick="removeFromCart(${index})" class="text-[8px] opacity-40 hover:opacity-100 transition-opacity">REMOVE</button>
+                </div>`;
+        }).join('');
+        total.innerText = `£${sum.toLocaleString()}`;
+    }
 
-        window.removeFromCart = (index) => {
-            cart.splice(index, 1);
-            updateCartUI();
-        };
+    window.removeFromCart = (index) => {
+        cart.splice(index, 1);
+        updateCartUI();
+    };
 
-        window.toggleContact = () => {
-            const contactSec = document.getElementById('contact');
-            contactSec.style.display = 'block';
-            gsap.to(contactSec, { opacity: 1, y: 0, duration: 1, ease: "expo.out", onComplete: () => { contactSec.scrollIntoView({ behavior: 'smooth' }); } });
-        };
+    window.viewProduct = (name, price, desc, img) => {
+        document.getElementById('product-content').innerHTML = `
+            <img src="${img}" class="w-full h-80 object-cover mb-8 grayscale hover:grayscale-0 transition-all">
+            <h2 class="text-3xl luxury-heading mb-4">${name}</h2>
+            <p class="text-gold text-xl mb-6">£${price}</p>
+            <div class="space-y-4 text-xs tracking-widest text-gray-400 mb-10 leading-loose">
+                <p>${desc}</p>
+                <p class="text-white">MATERIAL: Optical Grade Acrylic</p>
+                <p class="text-white">LEAD TIME: 8-12 Weeks (UK Delivery)</p>
+            </div>
+            <button onclick="addToCart('${name}', ${price}, event)" class="gold-btn w-full py-6 text-[10px] font-bold tracking-[0.3em] uppercase">Add to Cart</button>`;
+        prodPanel.classList.add('active');
+    };
+    window.closeProduct = () => prodPanel.classList.remove('active');
 
-        ScrollTrigger.create({
-            trigger: "#contact", start: "top bottom", 
-            onLeaveBack: () => { gsap.to("#contact", { opacity: 0, y: 30, duration: 0.5, onComplete: () => { document.getElementById('contact').style.display = 'none'; } }); }
+    // --- Content UI Helpers ---
+    window.openProcess = () => {
+        const overlay = document.getElementById('process-overlay');
+        overlay.style.display = 'block';
+        gsap.to(overlay, { opacity: 1, duration: 0.8 });
+    };
+    window.closeProcess = () => {
+        gsap.to('#process-overlay', { opacity: 0, duration: 0.5, onComplete: () => document.getElementById('process-overlay').style.display = 'none' });
+    };
+
+    window.toggleContact = () => {
+        const contactSec = document.getElementById('contact');
+        contactSec.style.display = 'block';
+        gsap.to(contactSec, { opacity: 1, y: 0, duration: 1, ease: "expo.out", onComplete: () => { contactSec.scrollIntoView({ behavior: 'smooth' }); } });
+    };
+
+    window.filterItems = (category) => {
+        document.getElementById('gallery').scrollIntoView({ behavior: 'smooth' });
+        const items = document.querySelectorAll('.product-item');
+        const title = document.getElementById('gallery-title');
+        gsap.to(title, { opacity: 0, y: 10, duration: 0.3, onComplete: () => {
+            title.innerText = category === 'all' ? "THE GALLERY." : category.toUpperCase() + " COLLECTION.";
+            gsap.to(title, { opacity: 1, y: 0, duration: 0.3 });
+        }});
+        items.forEach(item => {
+            if (category === 'all' || item.classList.contains(category)) {
+                gsap.to(item, { scale: 1, opacity: 1, duration: 0.6, display: 'block' });
+            } else {
+                gsap.to(item, { scale: 0.9, opacity: 0, duration: 0.4, display: 'none' });
+            }
         });
+    }
 
-        window.openProcess = () => {
-            const overlay = document.getElementById('process-overlay');
-            overlay.style.display = 'block';
-            gsap.to(overlay, { opacity: 1, duration: 0.8 });
-        };
-        window.closeProcess = () => {
-            gsap.to('#process-overlay', { opacity: 0, duration: 0.5, onComplete: () => document.getElementById('process-overlay').style.display = 'none' });
-        };
+    // --- Scroll Animations ---
+    ScrollTrigger.create({
+        trigger: "#contact", start: "top bottom", 
+        onLeaveBack: () => { gsap.to("#contact", { opacity: 0, y: 30, duration: 0.5, onComplete: () => { document.getElementById('contact').style.display = 'none'; } }); }
+    });
 
-        window.filterItems = (category) => {
-            document.getElementById('gallery').scrollIntoView({ behavior: 'smooth' });
-            const items = document.querySelectorAll('.product-item');
-            const title = document.getElementById('gallery-title');
-            gsap.to(title, { opacity: 0, y: 10, duration: 0.3, onComplete: () => {
-                title.innerText = category === 'all' ? "THE GALLERY." : category.toUpperCase() + " COLLECTION.";
-                gsap.to(title, { opacity: 1, y: 0, duration: 0.3 });
-            }});
-            items.forEach(item => {
-                if (category === 'all' || item.classList.contains(category)) {
-                    gsap.to(item, { scale: 1, opacity: 1, duration: 0.6, display: 'block' });
-                } else {
-                    gsap.to(item, { scale: 0.9, opacity: 0, duration: 0.4, display: 'none' });
-                }
-            });
-        }
+    // --- Three.js Scene Implementation ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+    
+    const geometry = new THREE.OctahedronGeometry(1.5, 0); 
+    const material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.1, roughness: 0.05, transmission: 1, ior: 1.5, thickness: 2, clearcoat: 1 });
+    const object3d = new THREE.Mesh(geometry, material);
+    scene.add(object3d);
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const pointLight1 = new THREE.PointLight(0xD4AF37, 80); pointLight1.position.set(5, 5, 5); scene.add(pointLight1);
+    const pointLight2 = new THREE.PointLight(0xffffff, 40); pointLight2.position.set(-5, -5, 5); scene.add(pointLight2);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    
+    camera.position.z = 6;
+    let mouseX = 0, mouseY = 0;
+    window.addEventListener('mousemove', (e) => {
+        mouseX = (e.clientX - window.innerWidth / 2) / 100;
+        mouseY = (e.clientY - window.innerHeight / 2) / 100;
+    });
+
+    gsap.to(object3d.rotation, { y: Math.PI * 4, scrollTrigger: { trigger: "body", start: "top top", end: "bottom bottom", scrub: 2 } });
+    
+    ScrollTrigger.create({
+        trigger: "#gallery", start: "top 80%",
+        onEnter: () => gsap.to("#canvas-container", { filter: "blur(20px) brightness(0.5)", opacity: 0.4, duration: 1 }),
+        onLeaveBack: () => gsap.to("#canvas-container", { filter: "blur(0px) brightness(1)", opacity: 1, duration: 1 })
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        object3d.rotation.x += 0.003;
+        object3d.position.x += (mouseX - object3d.position.x) * 0.05;
+        object3d.position.y += (-mouseY - object3d.position.y) * 0.05;
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
-        const geometry = new THREE.OctahedronGeometry(1.5, 0); 
-        const material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.1, roughness: 0.05, transmission: 1, ior: 1.5, thickness: 2, clearcoat: 1 });
-        const object3d = new THREE.Mesh(geometry, material);
-        scene.add(object3d);
-        const pointLight1 = new THREE.PointLight(0xD4AF37, 80); pointLight1.position.set(5, 5, 5); scene.add(pointLight1);
-        const pointLight2 = new THREE.PointLight(0xffffff, 40); pointLight2.position.set(-5, -5, 5); scene.add(pointLight2);
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); scene.add(ambientLight);
-        camera.position.z = 6;
-        let mouseX = 0, mouseY = 0;
-        window.addEventListener('mousemove', (e) => {
-            mouseX = (e.clientX - window.innerWidth / 2) / 100;
-            mouseY = (e.clientY - window.innerHeight / 2) / 100;
-        });
-        gsap.to(object3d.rotation, { y: Math.PI * 4, scrollTrigger: { trigger: "body", start: "top top", end: "bottom bottom", scrub: 2 } });
-        ScrollTrigger.create({
-            trigger: "#gallery", start: "top 80%",
-            onEnter: () => gsap.to("#canvas-container", { filter: "blur(20px) brightness(0.5)", opacity: 0.4, duration: 1 }),
-            onLeaveBack: () => gsap.to("#canvas-container", { filter: "blur(0px) brightness(1)", opacity: 1, duration: 1 })
-        });
-        function animate() {
-            requestAnimationFrame(animate);
-            object3d.rotation.x += 0.003;
-            object3d.position.x += (mouseX - object3d.position.x) * 0.05;
-            object3d.position.y += (-mouseY - object3d.position.y) * 0.05;
-            renderer.render(scene, camera);
-        }
-        animate();
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
-</body>
+    });
+</script>
+  </body>
 </html>
