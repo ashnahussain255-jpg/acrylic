@@ -511,43 +511,46 @@ window.loginUser = async () => {
     const password = document.getElementById('auth-pass-field').value;
 
     if (!email || !password) {
-        alert("EMAIL & PASSWORD REQUIRED");
+        alert("DETAILS REQUIRED");
         return;
     }
 
     try {
-        const res = await fetch("https://acrylic.onrender.com/api/auth/login", {
+        console.log("Attempting Login for:", email);
+        
+        // Step 1: Login attempt
+        let res = await fetch("https://acrylic.onrender.com/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email, password })
         });
 
-        const data = await res.json();
+        let data = await res.json();
+        console.log("Backend Response:", data);
 
-        if (!data.success) {
-            alert("AUTH FAILED: Try again");
-            return;
+        // Step 2: Agar login fail ho, toh Register try karein
+        if (!data.token) {
+            console.log("Login failed, trying auto-registration...");
+            res = await fetch("https://acrylic.onrender.com/api/auth/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password })
+            });
+            data = await res.json();
         }
 
-        // ✅ SAVE TOKEN
-        localStorage.setItem("authToken", data.token);
-        localStorage.setItem("userEmail", data.email);
-
-        isLoggedIn = true;
-
-        // Close modal
-        gsap.to("#auth-modal", {
-            opacity: 0,
-            duration: 0.4,
-            onComplete: () => {
-                document.getElementById("auth-modal").style.display = "none";
-                toggleCart();
-            }
-        });
+        // Step 3: Final Token check
+        if (data.token) {
+            localStorage.setItem("acrylix_token", data.token);
+            alert("WELCOME TO ACRYLIX");
+            location.reload(); // Page refresh karein taake state update ho jaye
+        } else {
+            // Backend jo message bhej raha hai wahi dikhayein
+            alert("SERVER SAYS: " + (data.message || "Account not found & registration failed."));
+        }
 
     } catch (err) {
-        console.error(err);
-        alert("SERVER ERROR");
+        alert("CONNECTION ERROR: Make sure the Render server is awake.");
     }
 };
 
@@ -707,3 +710,4 @@ window.loginUser = async () => {
 </script>
   </body>
 </html>
+
