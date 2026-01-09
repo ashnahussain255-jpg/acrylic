@@ -11,7 +11,7 @@ app.use(express.json());
 
 // MongoDB Connection
 // Yahan aap apna MongoDB Atlas ka URL dalenge baad mein
-const mongoURI = process.env.MONGO_URI || 'https://acrylic.onrender.com';
+const mongoURI = process.env.MONGO_URI;
 mongoose.connect(mongoURI)
     .then(() => console.log('✅ MongoDB Connected'))
     .catch(err => console.log('❌ DB Connection Error:', err));
