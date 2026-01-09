@@ -92,16 +92,25 @@ const verifyToken = (req, res, next) => {
 /* =======================
    AUTH: LOGIN / REGISTER
 ======================= */
+/* =======================
+   REPLACE YOUR LOGIN ROUTE WITH THIS
+======================= */
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
 
     try {
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: "Missing email or password" });
+        }
+
         let user = await User.findOne({ email });
 
         if (!user) {
+            console.log("Creating new user...");
             const hashed = await bcrypt.hash(password, 10);
             user = await User.create({ email, password: hashed });
         } else {
+            console.log("Checking password for existing user...");
             const match = await bcrypt.compare(password, user.password);
             if (!match) {
                 return res.status(400).json({ success: false, message: "Invalid password" });
@@ -117,7 +126,8 @@ app.post('/api/auth/login', async (req, res) => {
         res.json({ success: true, token, email: user.email });
 
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        console.error("🔥 Auth Error Details:", err); // Ye Render logs mein dikhega
+        res.status(500).json({ success: false, error: "Database or Server Error" });
     }
 });
 
