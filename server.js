@@ -1,9 +1,9 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const bcrypt = require('bcryptjs'); // Password secure karne ke liye
-const jwt = require('jsonwebtoken'); // Login session ke liye
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Payment ke liye
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 require('dotenv').config();
 
 const app = express();
@@ -19,7 +19,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // --- SCHEMAS ---
 
-// 1. User Schema (For Login/Signup)
+// 1. User Schema
 const userSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true }
@@ -31,38 +31,48 @@ const orderSchema = new mongoose.Schema({
     items: Array,
     total: String,
     customerEmail: String,
-    status: { type: String, default: 'Pending' },
+    stripeSessionId: String,
+    status: { type: String, default: 'Pending' }, // Payment confirm hone par 'Paid' ho jayega
     date: { type: Date, default: Date.now }
 });
 const Order = mongoose.model('Order', orderSchema);
 
+// 3. Inquiry Schema (Fixed)
+const inquirySchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    message: { type: String, required: true },
+    date: { type: Date, default: Date.now }
+});
+const Inquiry = mongoose.model('Inquiry', inquirySchema);
+
 // --- ROUTES ---
 
-// 1. AUTH: Register/Login (Combined Logic)
+// 1. AUTH: Combined Register/Login
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     try {
         let user = await User.findOne({ email });
         
-        // Agar user nahi hai, toh register karlo (Simple UX)
         if (!user) {
+            // New Registration
             const hashedPassword = await bcrypt.hash(password, 10);
             user = new User({ email, password: hashedPassword });
             await user.save();
         } else {
-            // Agar user hai, toh password check karo
+            // Password Verification
             const isMatch = await bcrypt.compare(password, user.password);
-            if (!isMatch) return res.status(400).json({ message: "Invalid Password" });
+            if (!isMatch) return res.status(400).json({ success: false, message: "Invalid Password" });
         }
 
-        const token = jwt.sign({ id: user._id }, 'SECRET_KEY_123', { expiresIn: '1h' });
+        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'SUPER_SECRET', { expiresIn: '24h' });
         res.status(200).json({ success: true, token, email: user.email });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// 2. PAYMENT: Stripe Checkout Session
+// 2. PAYMENT: Stripe Checkout (Professional Flow)
 app.post('/api/create-checkout-session', async (req, res) => {
     try {
         const { items, email } = req.body;
@@ -71,7 +81,7 @@ app.post('/api/create-checkout-session', async (req, res) => {
             price_data: {
                 currency: 'gbp',
                 product_data: { name: item.name },
-                unit_amount: item.price * 100, // Stripe takes amount in pence
+                unit_amount: Math.round(item.price * 100), 
             },
             quantity: 1,
         }));
@@ -81,26 +91,34 @@ app.post('/api/create-checkout-session', async (req, res) => {
             line_items,
             mode: 'payment',
             customer_email: email,
-            success_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/success.html`,
-            cancel_url: `${process.env.FRONTEND_URL || 'http://localhost:5500'}/cancel.html`,
+            success_url: `${process.env.FRONTEND_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.FRONTEND_URL}/cancel.html`,
         });
 
-        // Order ko DB mein save karein (as pending)
-        const newOrder = new Order({ items, total: "£" + (line_items.reduce((a,b) => a + b.price_data.unit_amount, 0)/100), customerEmail: email });
+        // Save Order as Pending
+        const totalAmount = line_items.reduce((acc, curr) => acc + curr.price_data.unit_amount, 0) / 100;
+        const newOrder = new Order({ 
+            items, 
+            total: `£${totalAmount.toFixed(2)}`, 
+            customerEmail: email,
+            stripeSessionId: session.id 
+        });
         await newOrder.save();
 
         res.json({ url: session.url });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Stripe Error:", err);
+        res.status(500).json({ error: "Could not create payment session" });
     }
 });
 
-// 3. INQUIRY: Contact Form
+// 3. INQUIRY: Contact Form (Fixed Logic)
 app.post('/api/inquiry', async (req, res) => {
     try {
-        const newInquiry = new mongoose.Schema({ name: String, email: String, message: String });
-        // Aapka purana inquiry logic yahan kaam karega
-        res.status(201).json({ success: true, message: "Inquiry received!" });
+        const { name, email, message } = req.body;
+        const newInquiry = new Inquiry({ name, email, message });
+        await newInquiry.save();
+        res.status(201).json({ success: true, message: "Inquiry stored successfully!" });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
